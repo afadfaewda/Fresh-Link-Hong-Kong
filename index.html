@@ -1,0 +1,738 @@
+import { useMemo, useState, type ReactNode } from "react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronRight,
+  Leaf,
+  MapPin,
+  Minus,
+  Plus,
+  Search,
+  ShoppingBag,
+  Store,
+  UserRound,
+} from "lucide-react";
+import { filters, findProduct, products, type Category, type Product } from "@/lib/market";
+
+type Role = "customer" | "vendor";
+type Screen =
+  | { name: "home" }
+  | { name: "list"; category: Category }
+  | { name: "detail"; id: string }
+  | { name: "checkout" }
+  | { name: "success"; code: string; pickup: boolean; stall: string }
+  | { name: "orders" }
+  | { name: "vendor" }
+  | { name: "vendorOrder"; id: string };
+
+type CartLine = { id: string; qty: number };
+
+type Order = {
+  id: string;
+  code: string;
+  lines: CartLine[];
+  pickup: boolean;
+  total: number;
+  status: "new" | "packing" | "ready";
+  note: string;
+};
+
+const seed: Order = {
+  id: "seed",
+  code: "A2104",
+  lines: [
+    { id: "b1", qty: 1 },
+    { id: "t1", qty: 2 },
+  ],
+  pickup: true,
+  total: 72,
+  status: "new",
+  note: "Less ginger",
+};
+
+function money(n: number) {
+  return `HK$${n}`;
+}
+
+function stamp(category: Product["category"]) {
+  if (category === "bundle") return "bg-clay-soft text-clay";
+  if (category === "meat") return "bg-ink text-card";
+  if (category === "tofu") return "bg-paper text-ink";
+  return "bg-leaf-soft text-leaf";
+}
+
+export function FreshLink() {
+  const [role, setRole] = useState<Role>("customer");
+  const [screen, setScreen] = useState<Screen>({ name: "home" });
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [orders, setOrders] = useState<Order[]>([seed]);
+  const [pickup, setPickup] = useState(true);
+  const [qty, setQty] = useState(1);
+  const [toast, setToast] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  const count = cart.reduce((n, l) => n + l.qty, 0);
+
+  function flash(text: string) {
+    setToast(text);
+    window.setTimeout(() => setToast(null), 1600);
+  }
+
+  function add(id: string, amount: number) {
+    setCart((prev) => {
+      const hit = prev.find((l) => l.id === id);
+      if (!hit) return [...prev, { id, qty: amount }];
+      return prev.map((l) => (l.id === id ? { ...l, qty: l.qty + amount } : l));
+    });
+  }
+
+  function setLine(id: string, next: number) {
+    setCart((prev) =>
+      next <= 0 ? prev.filter((l) => l.id !== id) : prev.map((l) => (l.id === id ? { ...l, qty: next } : l)),
+    );
+  }
+
+  const goods = useMemo(() => {
+    const q = query.trim();
+    return products.filter((p) => {
+      const catOk = screen.name !== "list" || screen.category === "all" || p.category === screen.category;
+      const qOk = !q || p.name.includes(q) || p.vendor.includes(q) || p.en.toLowerCase().includes(q.toLowerCase());
+      return catOk && qOk;
+    });
+  }, [query, screen]);
+
+  function goCustomer(next: Screen) {
+    setRole("customer");
+    setScreen(next);
+  }
+
+  function place() {
+    if (cart.length === 0) return;
+    const sub = cart.reduce((n, l) => n + (findProduct(l.id)?.price ?? 0) * l.qty, 0);
+    const fee = pickup ? 0 : 28;
+    const stall = findProduct(cart[0].id)?.stall ?? "A12";
+    const code = `A${Math.floor(1000 + Math.random() * 9000)}`;
+    const order: Order = {
+      id: crypto.randomUUID(),
+      code,
+      lines: cart,
+      pickup,
+      total: sub + fee,
+      status: "new",
+      note: "",
+    };
+    setOrders((prev) => [order, ...prev]);
+    setCart([]);
+    setScreen({ name: "success", code, pickup, stall });
+  }
+
+  const title =
+    screen.name === "home"
+      ? "Fresh Link"
+      : screen.name === "list"
+        ? "Today’s market"
+        : screen.name === "detail"
+          ? "Item"
+          : screen.name === "checkout"
+            ? "Checkout"
+            : screen.name === "success"
+              ? "Order placed"
+              : screen.name === "orders"
+                ? "My orders"
+                : screen.name === "vendor"
+                  ? "Vendor desk"
+                  : "Order";
+
+  return (
+    <div className="min-h-dvh bg-paper text-ink">
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-card shadow-[0_0_0_1px_var(--color-line)]">
+        <header className="sticky top-0 z-20 border-b border-line bg-card/95 px-4 pb-3 pt-4 backdrop-blur">
+          <div className="flex items-center gap-2">
+            {screen.name !== "home" && screen.name !== "vendor" ? (
+              <button
+                type="button"
+                aria-label="Back"
+                className="grid size-11 place-items-center rounded-full border border-line"
+                onClick={() => {
+                  if (screen.name === "detail") setScreen({ name: "list", category: "all" });
+                  else if (screen.name === "checkout") setScreen({ name: "home" });
+                  else if (screen.name === "success") setScreen({ name: "orders" });
+                  else if (screen.name === "vendorOrder") setScreen({ name: "vendor" });
+                  else setScreen({ name: "home" });
+                }}
+              >
+                <ArrowLeft className="size-5" />
+              </button>
+            ) : (
+              <span className="grid size-11 place-items-center rounded-full bg-leaf text-card">
+                <Leaf className="size-5" />
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="font-display text-xl leading-none tracking-tight">{title}</p>
+              <p className="mt-1 flex items-center gap-1 text-sm text-muted">
+                <MapPin className="size-3.5" />
+                Mong Kok Market · pickup first
+              </p>
+            </div>
+            <button
+              type="button"
+              className="rounded-full border border-line px-3 py-2 text-sm font-medium"
+              onClick={() => {
+                const next = role === "customer" ? "vendor" : "customer";
+                setRole(next);
+                setScreen(next === "vendor" ? { name: "vendor" } : { name: "home" });
+              }}
+            >
+              {role === "customer" ? "Vendor" : "Shop"}
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 px-4 pb-28 pt-4">
+          {screen.name === "home" && (
+            <Home
+              onOpen={(id) => {
+                setQty(1);
+                setScreen({ name: "detail", id });
+              }}
+              onList={(category) => setScreen({ name: "list", category })}
+            />
+          )}
+          {screen.name === "list" && (
+            <List
+              category={screen.category}
+              query={query}
+              setQuery={setQuery}
+              items={goods}
+              onCategory={(category) => setScreen({ name: "list", category })}
+              onOpen={(id) => {
+                setQty(1);
+                setScreen({ name: "detail", id });
+              }}
+            />
+          )}
+          {screen.name === "detail" && (
+            <Detail
+              product={findProduct(screen.id)}
+              qty={qty}
+              setQty={setQty}
+              onAdd={() => {
+                if (!findProduct(screen.id)) return;
+                add(screen.id, qty);
+                flash("Added to basket");
+              }}
+              onBuy={() => {
+                if (!findProduct(screen.id)) return;
+                add(screen.id, qty);
+                setScreen({ name: "checkout" });
+              }}
+            />
+          )}
+          {screen.name === "checkout" && (
+            <Checkout cart={cart} pickup={pickup} setPickup={setPickup} setLine={setLine} onPlace={place} />
+          )}
+          {screen.name === "success" && (
+            <Success
+              code={screen.code}
+              pickup={screen.pickup}
+              stall={screen.stall}
+              onOrders={() => setScreen({ name: "orders" })}
+              onHome={() => setScreen({ name: "home" })}
+            />
+          )}
+          {screen.name === "orders" && <Orders orders={orders.filter((_, i) => i >= 0)} />}
+          {screen.name === "vendor" && (
+            <VendorHome
+              orders={orders}
+              onOpen={(id) => setScreen({ name: "vendorOrder", id })}
+            />
+          )}
+          {screen.name === "vendorOrder" && (
+            <VendorOrder
+              order={orders.find((o) => o.id === screen.id)}
+              onStatus={(status) => {
+                setOrders((prev) => prev.map((o) => (o.id === screen.id ? { ...o, status } : o)));
+                flash(status === "packing" ? "Order accepted" : "Customer notified");
+              }}
+            />
+          )}
+        </main>
+
+        {role === "customer" && screen.name !== "success" && (
+          <nav className="sticky bottom-0 border-t border-line bg-card px-2 py-2">
+            <div className="grid grid-cols-4">
+              <Tab icon={<Leaf className="size-5" />} label="Home" active={screen.name === "home"} onClick={() => goCustomer({ name: "home" })} />
+              <Tab
+                icon={<Search className="size-5" />}
+                label="Browse"
+                active={screen.name === "list" || screen.name === "detail"}
+                onClick={() => goCustomer({ name: "list", category: "all" })}
+              />
+              <Tab
+                icon={<ShoppingBag className="size-5" />}
+                label={count ? `Basket ${count}` : "Basket"}
+                active={screen.name === "checkout"}
+                onClick={() => goCustomer({ name: "checkout" })}
+              />
+              <Tab
+                icon={<UserRound className="size-5" />}
+                label="Orders"
+                active={screen.name === "orders"}
+                onClick={() => goCustomer({ name: "orders" })}
+              />
+            </div>
+          </nav>
+        )}
+
+        {toast && (
+          <div className="pointer-events-none fixed inset-x-0 bottom-24 z-30 flex justify-center">
+            <p className="rounded-full bg-ink px-4 py-2 text-sm text-card">{toast}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Tab({
+  icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex min-h-12 flex-col items-center justify-center gap-0.5 text-xs ${active ? "text-leaf" : "text-muted"}`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function Home({
+  onOpen,
+  onList,
+}: {
+  onOpen: (id: string) => void;
+  onList: (c: Category) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <section className="rounded-2xl bg-leaf px-5 py-5 text-card">
+        <p className="text-sm text-leaf-soft">Street-market fresh · supermarket clean · pickup</p>
+        <h1 className="mt-2 font-display text-3xl leading-tight">Market greens, without the crowded stall.</h1>
+        <button
+          type="button"
+          className="mt-4 inline-flex min-h-11 items-center gap-1 rounded-full bg-card px-4 text-sm font-medium text-ink"
+          onClick={() => onList("bundle")}
+        >
+          Today’s bundles
+          <ChevronRight className="size-4" />
+        </button>
+      </section>
+
+      <div className="grid grid-cols-4 gap-2">
+        {filters
+          .filter((f) => f.id !== "all")
+          .map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => onList(f.id)}
+              className="min-h-16 rounded-2xl border border-line bg-paper text-sm font-medium"
+            >
+              {f.label}
+            </button>
+          ))}
+      </div>
+
+      <section>
+        <div className="mb-2 flex items-end justify-between">
+          <h2 className="font-display text-2xl">From the stalls</h2>
+          <button type="button" className="text-sm text-leaf" onClick={() => onList("all")}>
+            All
+          </button>
+        </div>
+        <div className="space-y-3">
+          {products.slice(0, 4).map((p) => (
+            <ProductRow key={p.id} product={p} onOpen={() => onOpen(p.id)} />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function List({
+  category,
+  query,
+  setQuery,
+  items,
+  onCategory,
+  onOpen,
+}: {
+  category: Category;
+  query: string;
+  setQuery: (v: string) => void;
+  items: Product[];
+  onCategory: (c: Category) => void;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <label className="flex items-center gap-2 rounded-full border border-line bg-paper px-3">
+        <Search className="size-4 text-muted" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search greens, tofu, stalls"
+          className="h-11 w-full bg-transparent text-sm outline-none"
+        />
+      </label>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {filters.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => onCategory(f.id)}
+            className={`shrink-0 rounded-full px-4 py-2 text-sm ${
+              category === f.id ? "bg-leaf text-card" : "border border-line bg-card"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {items.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
+          Nothing matches.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {items.map((p) => (
+            <ProductRow key={p.id} product={p} onOpen={() => onOpen(p.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductRow({ product, onOpen }: { product: Product; onOpen: () => void }) {
+  return (
+    <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 rounded-2xl border border-line p-3 text-left">
+      <span className={`grid size-16 shrink-0 place-items-center rounded-xl font-display text-lg ${stamp(product.category)}`}>
+        {product.name.slice(0, 1)}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-medium">{product.name}</span>
+        <span className="mt-0.5 block text-sm text-muted">
+          {product.vendor} · stall {product.stall}
+        </span>
+        <span className="mt-1 block text-xs text-leaf">{product.fresh}</span>
+      </span>
+      <span className="text-right">
+        <span className="block font-display text-xl">{money(product.price)}</span>
+        <span className="text-xs text-muted">/{product.unit}</span>
+      </span>
+    </button>
+  );
+}
+
+function Detail({
+  product,
+  qty,
+  setQty,
+  onAdd,
+  onBuy,
+}: {
+  product: Product | undefined;
+  qty: number;
+  setQty: (n: number) => void;
+  onAdd: () => void;
+  onBuy: () => void;
+}) {
+  if (!product) return <p className="text-sm text-muted">That item is gone.</p>;
+  return (
+    <div className="space-y-4">
+      <div className={`flex h-40 items-end rounded-2xl p-5 ${stamp(product.category)}`}>
+        <div>
+          <p className="text-sm opacity-80">{product.en}</p>
+          <h2 className="font-display text-4xl">{product.name}</h2>
+        </div>
+      </div>
+      <div className="flex items-end justify-between">
+        <p className="font-display text-3xl">
+          {money(product.price)}
+          <span className="ml-1 font-sans text-sm text-muted">/{product.unit}</span>
+        </p>
+        <p className="text-sm text-leaf">{product.fresh}</p>
+      </div>
+      <p className="text-sm leading-relaxed text-muted">{product.blurb}</p>
+      <div className="flex items-center gap-3 rounded-2xl border border-line p-3">
+        <Store className="size-5 text-leaf" />
+        <div>
+          <p className="font-medium">{product.vendor}</p>
+          <p className="text-sm text-muted">Pickup at stall {product.stall} · we do not poach customers</p>
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-sm">Qty</span>
+        <div className="flex items-center gap-3">
+          <button type="button" className="grid size-11 place-items-center rounded-full border border-line" onClick={() => setQty(Math.max(1, qty - 1))}>
+            <Minus className="size-4" />
+          </button>
+          <span className="w-6 text-center font-medium">{qty}</span>
+          <button type="button" className="grid size-11 place-items-center rounded-full border border-line" onClick={() => setQty(qty + 1)}>
+            <Plus className="size-4" />
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" className="min-h-12 rounded-full border border-leaf text-sm font-medium text-leaf" onClick={onAdd}>
+          Add to basket
+        </button>
+        <button type="button" className="min-h-12 rounded-full bg-leaf text-sm font-medium text-card" onClick={onBuy}>
+          Buy now
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Checkout({
+  cart,
+  pickup,
+  setPickup,
+  setLine,
+  onPlace,
+}: {
+  cart: CartLine[];
+  pickup: boolean;
+  setPickup: (v: boolean) => void;
+  setLine: (id: string, n: number) => void;
+  onPlace: () => void;
+}) {
+  const sub = cart.reduce((n, l) => n + (findProduct(l.id)?.price ?? 0) * l.qty, 0);
+  const fee = pickup || cart.length === 0 ? 0 : 28;
+  return (
+    <div className="space-y-4">
+      {cart.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-line px-4 py-10 text-center text-sm text-muted">
+          Your basket is empty. Start with a bundle.
+        </p>
+      ) : (
+        cart.map((line) => {
+          const p = findProduct(line.id);
+          if (!p) return null;
+          return (
+            <div key={line.id} className="flex items-center gap-3 rounded-2xl border border-line p-3">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">{p.name}</p>
+                <p className="text-sm text-muted">
+                  {p.vendor} · {money(p.price)}
+                </p>
+              </div>
+              <button type="button" className="grid size-10 place-items-center rounded-full border border-line" onClick={() => setLine(line.id, line.qty - 1)}>
+                <Minus className="size-4" />
+              </button>
+              <span className="w-5 text-center">{line.qty}</span>
+              <button type="button" className="grid size-10 place-items-center rounded-full border border-line" onClick={() => setLine(line.id, line.qty + 1)}>
+                <Plus className="size-4" />
+              </button>
+            </div>
+          );
+        })
+      )}
+
+      <fieldset className="space-y-2">
+        <legend className="mb-2 text-sm font-medium">How to collect</legend>
+        <Choice on={pickup} title="Pickup (recommended)" hint="Show your code at the stall. No delivery fee." onClick={() => setPickup(true)} />
+        <Choice on={!pickup} title="Limited delivery · HK$28" hint="Short trip inside the neighbourhood. No cold chain." onClick={() => setPickup(false)} />
+      </fieldset>
+
+      <div className="rounded-2xl bg-paper p-4 text-sm">
+        <Row k="Items" v={money(sub)} />
+        <Row k="Delivery" v={fee ? money(fee) : "Free"} />
+        <div className="mt-2 flex justify-between border-t border-line pt-2 font-medium">
+          <span>Total</span>
+          <span className="font-display text-2xl">{money(sub + fee)}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        disabled={cart.length === 0}
+        onClick={onPlace}
+        className="min-h-12 w-full rounded-full bg-clay text-sm font-medium text-card disabled:opacity-40"
+      >
+        Place order
+      </button>
+    </div>
+  );
+}
+
+function Choice({ on, title, hint, onClick }: { on: boolean; title: string; hint: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className={`w-full rounded-2xl border p-3 text-left ${on ? "border-leaf bg-leaf-soft" : "border-line"}`}>
+      <span className="flex items-center justify-between font-medium">
+        {title}
+        {on && <Check className="size-4 text-leaf" />}
+      </span>
+      <span className="mt-1 block text-sm text-muted">{hint}</span>
+    </button>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex justify-between py-1 text-muted">
+      <span>{k}</span>
+      <span className="text-ink">{v}</span>
+    </div>
+  );
+}
+
+function Success({
+  code,
+  pickup,
+  stall,
+  onOrders,
+  onHome,
+}: {
+  code: string;
+  pickup: boolean;
+  stall: string;
+  onOrders: () => void;
+  onHome: () => void;
+}) {
+  return (
+    <div className="space-y-4 pt-6 text-center">
+      <span className="mx-auto grid size-16 place-items-center rounded-full bg-leaf text-card">
+        <Check className="size-8" />
+      </span>
+      <h2 className="font-display text-3xl">Order placed</h2>
+      <p className="text-sm text-muted">{pickup ? `Collect at Mong Kok Market, stall ${stall}` : "A short neighbourhood delivery is on the way"}</p>
+      <div className="rounded-2xl border border-line px-4 py-6">
+        <p className="text-sm text-muted">Pickup code</p>
+        <p className="font-display text-5xl tracking-wide">{code}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" className="min-h-12 rounded-full border border-line text-sm" onClick={onOrders}>
+          View orders
+        </button>
+        <button type="button" className="min-h-12 rounded-full bg-leaf text-sm text-card" onClick={onHome}>
+          Back home
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Orders({ orders }: { orders: Order[] }) {
+  return (
+    <div className="space-y-3">
+      {orders.map((o) => (
+        <article key={o.id} className="rounded-2xl border border-line p-4">
+          <div className="flex items-center justify-between">
+            <p className="font-medium">Code {o.code}</p>
+            <Status status={o.status} />
+          </div>
+          <ul className="mt-2 space-y-1 text-sm text-muted">
+            {o.lines.map((l) => {
+              const p = findProduct(l.id);
+              return (
+                <li key={l.id}>
+                  {p?.name ?? "Item"} × {l.qty}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-2 text-sm">
+            {o.pickup ? "Pickup" : "Delivery"} · {money(o.total)}
+          </p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function Status({ status }: { status: Order["status"] }) {
+  const label = status === "new" ? "New" : status === "packing" ? "Packing" : "Ready";
+  return <span className="rounded-full bg-leaf-soft px-2 py-1 text-xs text-leaf">{label}</span>;
+}
+
+function VendorHome({ orders, onOpen }: { orders: Order[]; onOpen: (id: string) => void }) {
+  const open = orders.filter((o) => o.status !== "ready").length;
+  return (
+    <div className="space-y-4">
+      <section className="rounded-2xl bg-ink px-5 py-5 text-card">
+        <p className="text-sm text-line">Vendor desk · Ah Fun / Shun Kee / Wong Kee</p>
+        <p className="mt-2 font-display text-3xl">{open} open</p>
+        <p className="mt-1 text-sm text-line">No poaching, no undercutting. Accept, then pack.</p>
+      </section>
+      {orders.map((o) => (
+        <button key={o.id} type="button" onClick={() => onOpen(o.id)} className="flex w-full items-center gap-3 rounded-2xl border border-line p-4 text-left">
+          <div className="flex-1">
+            <p className="font-medium">Order {o.code}</p>
+            <p className="mt-1 text-sm text-muted">
+              {o.lines.length} items · {o.pickup ? "Pickup" : "Delivery"} · {money(o.total)}
+            </p>
+          </div>
+          <Status status={o.status} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function VendorOrder({
+  order,
+  onStatus,
+}: {
+  order: Order | undefined;
+  onStatus: (s: Order["status"]) => void;
+}) {
+  if (!order) return <p className="text-sm text-muted">Order not found.</p>;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-3xl">{order.code}</h2>
+        <Status status={order.status} />
+      </div>
+      <ul className="divide-y divide-line rounded-2xl border border-line">
+        {order.lines.map((l) => {
+          const p = findProduct(l.id);
+          return (
+            <li key={l.id} className="flex justify-between px-4 py-3 text-sm">
+              <span>
+                {p?.name} · {p?.vendor}
+              </span>
+              <span>× {l.qty}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-sm text-muted">{order.pickup ? "Customer will pick up" : "Short neighbourhood delivery"} · {order.note || "No note"}</p>
+      {order.status === "new" && (
+        <button type="button" className="min-h-12 w-full rounded-full bg-leaf text-sm font-medium text-card" onClick={() => onStatus("packing")}>
+          Accept order
+        </button>
+      )}
+      {order.status === "packing" && (
+        <button type="button" className="min-h-12 w-full rounded-full bg-clay text-sm font-medium text-card" onClick={() => onStatus("ready")}>
+          Packed — notify customer
+        </button>
+      )}
+      {order.status === "ready" && <p className="rounded-2xl bg-leaf-soft px-4 py-4 text-sm text-leaf">The customer can collect with this code.</p>}
+    </div>
+  );
+}
